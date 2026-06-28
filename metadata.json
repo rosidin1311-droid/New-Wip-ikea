@@ -1,0 +1,6 @@
+{
+  "name": "Sistem Produksi IKEA",
+  "description": "Aplikasi PWA Mobile-First untuk Pencatatan Produksi, WIP, dan Aktualisasi Stok Barang IKEA",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
