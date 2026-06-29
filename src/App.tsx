@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AppData, Transaction, Item } from './types';
+import { AppData, Transaction, Item, Forecast } from './types';
 import { initialData } from './data/initialData';
 import BottomNav from './components/BottomNav';
 import DashboardView from './components/DashboardView';
@@ -127,6 +127,33 @@ export default function App() {
     const updated: AppData = {
       ...appData,
       items: appData.items.filter(i => i.id !== id)
+    };
+    saveToStorage(updated);
+  };
+
+  // Add Forecast
+  const handleAddForecast = (newForecast: Forecast) => {
+    const updated: AppData = {
+      ...appData,
+      forecasts: [...appData.forecasts, newForecast]
+    };
+    saveToStorage(updated);
+  };
+
+  // Update Forecast
+  const handleUpdateForecast = (updatedForecast: Forecast) => {
+    const updated: AppData = {
+      ...appData,
+      forecasts: appData.forecasts.map(f => f.id === updatedForecast.id ? updatedForecast : f)
+    };
+    saveToStorage(updated);
+  };
+
+  // Delete Forecast
+  const handleDeleteForecast = (id: string) => {
+    const updated: AppData = {
+      ...appData,
+      forecasts: appData.forecasts.filter(f => f.id !== id)
     };
     saveToStorage(updated);
   };
@@ -323,6 +350,9 @@ export default function App() {
             onAddItem={handleAddItem}
             onUpdateItem={handleUpdateItem}
             onDeleteItem={handleDeleteItem}
+            onAddForecast={handleAddForecast}
+            onUpdateForecast={handleUpdateForecast}
+            onDeleteForecast={handleDeleteForecast}
             onImportJSON={handleImportJSON}
             onResetToBackup={handleResetToBackup}
             onCopyWA={handleCopyWA}

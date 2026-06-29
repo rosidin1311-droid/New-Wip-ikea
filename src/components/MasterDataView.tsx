@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppData, Customer, Item } from '../types';
+import { AppData, Customer, Item, Forecast } from '../types';
 import { generateId, calculateItemWIP, calculateCurrentStock } from '../utils/calculations';
 import * as XLSX from 'xlsx';
 import { 
@@ -20,7 +20,11 @@ import {
   Copy,
   ArrowRight,
   RefreshCw,
-  Share2
+  Share2,
+  Calendar,
+  TrendingUp,
+  CheckSquare,
+  AlertTriangle
 } from 'lucide-react';
 
 interface MasterDataViewProps {
@@ -32,12 +36,15 @@ interface MasterDataViewProps {
   onAddItem: (item: Item) => void;
   onUpdateItem: (item: Item) => void;
   onDeleteItem: (id: string) => void;
+  onAddForecast: (forecast: Forecast) => void;
+  onUpdateForecast: (forecast: Forecast) => void;
+  onDeleteForecast: (id: string) => void;
   onImportJSON: (jsonString: string) => boolean;
   onResetToBackup: () => void;
   onCopyWA: (text: string) => void;
 }
 
-type SubTab = 'customers' | 'processes' | 'items' | 'backup';
+type SubTab = 'customers' | 'processes' | 'items' | 'forecasts' | 'backup';
 
 export default function MasterDataView({
   appData,
@@ -48,6 +55,9 @@ export default function MasterDataView({
   onAddItem,
   onUpdateItem,
   onDeleteItem,
+  onAddForecast,
+  onUpdateForecast,
+  onDeleteForecast,
   onImportJSON,
   onResetToBackup,
   onCopyWA
@@ -97,6 +107,29 @@ export default function MasterDataView({
   // Backup restore states
   const [jsonInput, setJsonInput] = useState('');
   const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Forecast states
+  const [fcCustomerId, setFcCustomerId] = useState('');
+  const [fcItemId, setFcItemId] = useState('');
+  const [fcTglDelivery, setFcTglDelivery] = useState('');
+  const [fcQty, setFcQty] = useState<number>(0);
+  const [fcStokAwal, setFcStokAwal] = useState<number>(0);
+  const [fcStatus, setFcStatus] = useState<string>('ACTIVE');
+  const [fcSuccess, setFcSuccess] = useState(false);
+  const [fcError, setFcError] = useState<string | null>(null);
+  const [editingForecast, setEditingForecast] = useState<Forecast | null>(null);
+  const [fcSearch, setFcSearch] = useState('');
+
+  // Automatically compute and default initial stock when item changes
+  useEffect(() => {
+    if (fcItemId && !editingForecast) {
+      const selectedItem = items.find(i => i.id === fcItemId);
+      if (selectedItem) {
+        const currentStock = calculateCurrentStock(selectedItem, transactions);
+        setFcStokAwal(currentStock);
+      }
+    }
+  }, [fcItemId, items, transactions, editingForecast]);
 
   // Filter & Search inside Master lists
   const [customerSearch, setCustomerSearch] = useState('');
@@ -250,6 +283,91 @@ export default function MasterDataView({
     }
   };
 
+  // 5. Submit Forecast
+  const handleForecastSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFcError(null);
+    if (!fcItemId || !fcTglDelivery) {
+      setFcError('Harap tentukan produk dan tanggal pengiriman!');
+      setTimeout(() => setFcError(null), 3000);
+      return;
+    }
+    if (fcQty < 0) {
+      setFcError('Jumlah Demand tidak boleh kurang dari 0!');
+      setTimeout(() => setFcError(null), 3000);
+      return;
+    }
+
+    if (editingForecast) {
+      const updated: Forecast = {
+        ...editingForecast,
+        item_id: fcItemId,
+        tgl_delivery: fcTglDelivery,
+        qty: fcQty,
+        stok_awal: fcStokAwal,
+        remain: Math.max(0, fcQty), // In production calculations, remain is dynamic or baseline
+        status: fcStatus
+      };
+      onUpdateForecast(updated);
+      setEditingForecast(null);
+      setFcSuccess(true);
+      setTimeout(() => setFcSuccess(false), 3000);
+    } else {
+      const newFc: Forecast = {
+        id: generateId('fc'),
+        item_id: fcItemId,
+        tgl_delivery: fcTglDelivery,
+        qty: fcQty,
+        stok_awal: fcStokAwal,
+        remain: fcQty,
+        status: 'ACTIVE'
+      };
+      onAddForecast(newFc);
+      setFcSuccess(true);
+      setTimeout(() => setFcSuccess(false), 3000);
+    }
+
+    // Reset states
+    setFcItemId('');
+    setFcTglDelivery('');
+    setFcQty(0);
+    setFcStokAwal(0);
+    setFcStatus('ACTIVE');
+  };
+
+  // Start editing forecast
+  const handleStartEditForecast = (fc: Forecast) => {
+    setEditingForecast(fc);
+    const itemOfForecast = items.find(i => i.id === fc.item_id);
+    if (itemOfForecast) {
+      setFcCustomerId(itemOfForecast.customer_id);
+    }
+    setFcItemId(fc.item_id);
+    setFcTglDelivery(fc.tgl_delivery);
+    setFcQty(fc.qty);
+    setFcStokAwal(fc.stok_awal);
+    setFcStatus(fc.status);
+
+    // Scroll smoothly to forecast form
+    const container = document.getElementById('add-forecast-form-container');
+    if (container) {
+      container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  // Cancel editing forecast
+  const handleCancelEditForecast = () => {
+    setEditingForecast(null);
+    setFcCustomerId('');
+    setFcItemId('');
+    setFcTglDelivery('');
+    setFcQty(0);
+    setFcStokAwal(0);
+    setFcStatus('ACTIVE');
+  };
+
   // Filter lists
   const filteredCustomers = customers.filter(c => 
     c.nama.toLowerCase().includes(customerSearch.toLowerCase())
@@ -277,7 +395,7 @@ export default function MasterDataView({
       </div>
 
       {/* Modern Horizontal Segmented Tabs inside Master View */}
-      <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100/80 rounded-2xl border border-slate-200">
+      <div className="grid grid-cols-5 gap-1 p-1 bg-slate-100/80 rounded-2xl border border-slate-200">
         <button
           onClick={() => setActiveSubTab('customers')}
           className={`flex flex-col items-center justify-center py-2.5 rounded-xl text-[10px] font-extrabold uppercase transition-all ${
@@ -312,6 +430,18 @@ export default function MasterDataView({
         >
           <Layers className="h-4 w-4 mb-1" />
           <span>Barang</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('forecasts')}
+          className={`flex flex-col items-center justify-center py-2.5 rounded-xl text-[10px] font-extrabold uppercase transition-all ${
+            activeSubTab === 'forecasts'
+              ? 'bg-ikea-blue text-white shadow-md'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <TrendingUp className="h-4 w-4 mb-1" />
+          <span>Forecast</span>
         </button>
 
         <button
@@ -771,6 +901,330 @@ export default function MasterDataView({
                     </div>
                   );
                 })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. FORECAST DEMAND SUBTAB */}
+      {activeSubTab === 'forecasts' && (
+        <div className="space-y-5">
+          {/* Add/Edit Forecast Form */}
+          <div id="add-forecast-form-container" className="ikea-card p-5 space-y-4">
+            <h3 className="text-sm font-black text-slate-900 border-b border-slate-50 pb-2 flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-ikea-blue" />
+              <span>{editingForecast ? 'UBAH FORECAST DEMAND' : 'DAFTARKAN FORECAST DEMAND BARU'}</span>
+            </h3>
+
+            {fcSuccess && (
+              <div className="p-3 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-2 border border-emerald-100 animate-fade-in">
+                <Check className="h-4 w-4 shrink-0" />
+                <span>Data forecast demand berhasil disimpan!</span>
+              </div>
+            )}
+
+            {fcError && (
+              <div className="p-3 bg-rose-50 text-rose-800 text-xs font-bold rounded-xl flex items-center gap-2 border border-rose-100 animate-fade-in">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{fcError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleForecastSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Customer Filter Dropdown */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Pilih Pelanggan (Customer)</label>
+                  <select
+                    value={fcCustomerId}
+                    onChange={(e) => {
+                      setFcCustomerId(e.target.value);
+                      setFcItemId(''); // Reset selected item
+                    }}
+                    className="ikea-input w-full"
+                  >
+                    <option value="">-- Pilih Customer --</option>
+                    {customers.filter(c => c.status).map(c => (
+                      <option key={c.id} value={c.id}>{c.nama}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Item / Model Selection */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Pilih Model / Part Number</label>
+                  <select
+                    value={fcItemId}
+                    onChange={(e) => setFcItemId(e.target.value)}
+                    disabled={!fcCustomerId}
+                    className="ikea-input w-full disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                  >
+                    <option value="">-- Pilih Model --</option>
+                    {items
+                      .filter(i => i.customer_id === fcCustomerId)
+                      .map(i => (
+                        <option key={i.id} value={i.id}>{i.model} - {i.part_number}</option>
+                      ))}
+                  </select>
+                  {!fcCustomerId && (
+                    <span className="text-[10px] text-slate-400 mt-1 block">Silakan pilih Customer terlebih dahulu</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Tanggal Delivery */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Tanggal Pengiriman (Delivery)</label>
+                  <input
+                    type="date"
+                    value={fcTglDelivery}
+                    onChange={(e) => setFcTglDelivery(e.target.value)}
+                    className="ikea-input w-full"
+                  />
+                </div>
+
+                {/* Qty Demand */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Jumlah Demand (pcs)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={fcQty || ''}
+                    onChange={(e) => setFcQty(parseInt(e.target.value) || 0)}
+                    className="ikea-input w-full font-mono font-bold"
+                    placeholder="0"
+                  />
+                </div>
+
+                {/* Stok Awal Baseline */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                    <span>Stok Awal Baseline</span>
+                    <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-1 py-0.2 rounded" title="Dihitung otomatis saat memilih model, tapi bisa Anda sesuaikan jika perlu">Otomatis</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={fcStokAwal || 0}
+                    onChange={(e) => setFcStokAwal(parseInt(e.target.value) || 0)}
+                    className="ikea-input w-full font-mono font-bold"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              {/* Status (only during edit mode) */}
+              {editingForecast && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Status Forecast</label>
+                  <div className="flex gap-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="fcStatus"
+                        value="ACTIVE"
+                        checked={fcStatus === 'ACTIVE'}
+                        onChange={(e) => setFcStatus(e.target.value)}
+                        className="text-ikea-blue focus:ring-ikea-blue"
+                      />
+                      <span>ACTIVE (Aktif dipantau)</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="fcStatus"
+                        value="CLOSED"
+                        checked={fcStatus === 'CLOSED'}
+                        onChange={(e) => setFcStatus(e.target.value)}
+                        className="text-ikea-blue focus:ring-ikea-blue"
+                      />
+                      <span>CLOSED (Tutup/Selesai)</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end pt-2">
+                {editingForecast && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEditForecast}
+                    className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 text-xs font-black text-white bg-ikea-blue hover:bg-blue-800 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-blue-100"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>{editingForecast ? 'SIMPAN PERUBAHAN' : 'TAMBAHKAN FORECAST'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* List Forecast */}
+          <div className="ikea-card p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-50 pb-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 uppercase">DAFTAR AKTIF FORECAST DEMAND</h3>
+                <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Memantau jadwal kirim & kebutuhan stok</p>
+              </div>
+
+              {/* Search bar inside sub-tab */}
+              <div className="relative max-w-xs w-full">
+                <input
+                  type="text"
+                  placeholder="Cari Model, Part No, Customer..."
+                  value={fcSearch}
+                  onChange={(e) => setFcSearch(e.target.value)}
+                  className="w-full text-xs font-bold pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+                <Database className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              </div>
+            </div>
+
+            {/* List Table / Card */}
+            <div className="space-y-3">
+              {forecasts.filter(fc => {
+                const item = items.find(i => i.id === fc.item_id);
+                if (!item) return false;
+                const cust = customers.find(c => c.id === item.customer_id);
+                const custName = cust?.nama || '';
+                
+                return item.model.toLowerCase().includes(fcSearch.toLowerCase()) ||
+                       item.part_number.toLowerCase().includes(fcSearch.toLowerCase()) ||
+                       custName.toLowerCase().includes(fcSearch.toLowerCase());
+              }).length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <TrendingUp className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-extrabold text-slate-500">Tidak ada data forecast demand ditemukan</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Gunakan form di atas untuk membuat jadwal forecast demand baru.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {forecasts.filter(fc => {
+                    const item = items.find(i => i.id === fc.item_id);
+                    if (!item) return false;
+                    const cust = customers.find(c => c.id === item.customer_id);
+                    const custName = cust?.nama || '';
+                    
+                    return item.model.toLowerCase().includes(fcSearch.toLowerCase()) ||
+                           item.part_number.toLowerCase().includes(fcSearch.toLowerCase()) ||
+                           custName.toLowerCase().includes(fcSearch.toLowerCase());
+                  }).map(fc => {
+                    const item = items.find(i => i.id === fc.item_id);
+                    const customer = item ? customers.find(c => c.id === item.customer_id) : null;
+                    const isClosed = fc.status !== 'ACTIVE';
+
+                    return (
+                      <div 
+                        key={fc.id} 
+                        className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                          isClosed 
+                            ? 'bg-slate-50/50 border-slate-200 opacity-70' 
+                            : 'bg-white border-slate-100 hover:shadow-md hover:border-slate-200'
+                        }`}
+                      >
+                        {/* Header card */}
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">
+                              {customer?.nama || 'PELANGGAN'}
+                            </span>
+                            <h4 className="font-extrabold text-slate-900 text-sm mt-0.5">{item?.model || 'MODEL TIDAK DIKETAHUI'}</h4>
+                            <p className="text-[10px] font-mono text-slate-400">{item?.part_number || '-'}</p>
+                          </div>
+                          
+                          {/* Status Pill & Action button */}
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                              isClosed
+                                ? 'bg-slate-200 text-slate-600'
+                                : 'bg-amber-100 text-amber-900 ring-1 ring-amber-200'
+                            }`}>
+                              {fc.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Mid Details */}
+                        <div className="grid grid-cols-3 gap-2 bg-slate-50/50 rounded-xl p-2.5 border border-slate-50 text-center">
+                          <div>
+                            <span className="block text-[9px] font-extrabold text-slate-400 uppercase">Delivery</span>
+                            <span className="text-[10px] font-extrabold text-slate-800 flex items-center justify-center gap-1 font-mono">
+                              <Calendar className="h-3 w-3 text-slate-400" />
+                              {fc.tgl_delivery}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[9px] font-extrabold text-slate-400 uppercase">Demand Qty</span>
+                            <span className="text-[11px] font-black text-slate-900 font-mono">
+                              {fc.qty} pcs
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[9px] font-extrabold text-slate-400 uppercase">Stok Awal</span>
+                            <span className="text-[11px] font-bold text-slate-600 font-mono">
+                              {fc.stok_awal} pcs
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Bottom Actions */}
+                        <div className="flex items-center justify-between border-t border-slate-100 pt-2.5">
+                          {/* Toggle Status Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated: Forecast = {
+                                ...fc,
+                                status: fc.status === 'ACTIVE' ? 'CLOSED' : 'ACTIVE'
+                              };
+                              onUpdateForecast(updated);
+                            }}
+                            className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center gap-1 transition-all cursor-pointer ${
+                              isClosed
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            <CheckSquare className="h-3 w-3" />
+                            <span>{isClosed ? 'Aktifkan' : 'Set Selesai'}</span>
+                          </button>
+
+                          {/* Edit / Delete Buttons */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditForecast(fc)}
+                              className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                              title="Edit Forecast"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`Hapus data forecast untuk model "${item?.model}" tanggal ${fc.tgl_delivery}?`)) {
+                                  onDeleteForecast(fc.id);
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Hapus Forecast"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
