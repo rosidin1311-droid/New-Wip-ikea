@@ -1,22 +1,64 @@
 import React, { useState } from 'react';
-import { AppData, Item } from '../types';
-import { calculateItemWIP } from '../utils/calculations';
-import { Search, ArrowRight, Share2, CornerDownRight, CheckSquare, ChevronRight, HelpCircle } from 'lucide-react';
+import { AppData, Item, Transaction } from '../types';
+import { calculateItemWIP, generateId } from '../utils/calculations';
+import { Search, ArrowRight, Share2, CornerDownRight, CheckSquare, ChevronRight, HelpCircle, X, Plus, Minus, Save, Edit3 } from 'lucide-react';
 
 interface LaporanWipViewProps {
   appData: AppData;
   onNavigateToCatat: (itemId: string, proses: string) => void;
+  onAddTransactions: (newTxs: Transaction[]) => void;
   onCopyWA: (text: string) => void;
 }
 
 export default function LaporanWipView({ 
   appData, 
   onNavigateToCatat,
+  onAddTransactions,
   onCopyWA
 }: LaporanWipViewProps) {
   const { customers, items, transactions } = appData;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+
+  // States for Quick WIP editing dialog
+  const [editingWip, setEditingWip] = useState<{
+    item: Item;
+    proses: string;
+    currentQty: number;
+  } | null>(null);
+  const [newWipQty, setNewWipQty] = useState<string>('');
+
+  const handleSaveQuickWip = () => {
+    if (!editingWip) return;
+    
+    const targetQty = parseInt(newWipQty);
+    if (isNaN(targetQty) || targetQty < 0) {
+      alert('Jumlah WIP harus berupa angka positif atau nol!');
+      return;
+    }
+
+    const diff = targetQty - editingWip.currentQty;
+    if (diff !== 0) {
+      const newTx: Transaction = {
+        id: generateId('tx'),
+        item_id: editingWip.item.id,
+        proses: editingWip.proses,
+        aksi: diff > 0 ? 'MASUK' : 'KELUAR',
+        qty: Math.abs(diff),
+        timestamp: new Date().toISOString(),
+        catatan: `Penyesuaian WIP Cepat (${editingWip.currentQty} ➔ ${targetQty})`
+      };
+      onAddTransactions([newTx]);
+    }
+
+    setEditingWip(null);
+  };
+
+  const handleAdjustPreset = (amount: number) => {
+    const currentVal = parseInt(newWipQty) || 0;
+    const newVal = Math.max(0, currentVal + amount);
+    setNewWipQty(newVal.toString());
+  };
 
   // Filter items based on search and customer dropdown
   const filteredItems = items.filter(item => {
@@ -173,7 +215,10 @@ export default function LaporanWipView({
 
                 {/* Step sequences container */}
                 <div className="mt-3 bg-slate-50/50 rounded-xl p-3 border border-slate-50 space-y-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Stasiun Kerja & Sisa WIP</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Stasiun Kerja & Sisa WIP</span>
+                    <span className="text-[9px] font-black text-[#0058ab] bg-[#cceeff] px-1.5 py-0.5 rounded-md animate-pulse">⚡ Tap angka untuk input cepat</span>
+                  </div>
                   
                   <div className="grid grid-cols-1 divide-y divide-slate-100">
                     {item.alur_proses.map((proses, idx) => {
@@ -188,11 +233,25 @@ export default function LaporanWipView({
                           </div>
 
                           <div className="flex items-center gap-3">
-                            {/* Quantity label */}
-                            <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
-                              qty > 0 ? 'bg-amber-100 text-amber-900 font-extrabold' : 'bg-slate-100 text-slate-400'
-                            }`}>
-                              {qty} pcs
+                            {/* Quantity label with interactive tap trigger */}
+                            <span 
+                              onClick={() => {
+                                setEditingWip({
+                                  item,
+                                  proses,
+                                  currentQty: qty
+                                });
+                                setNewWipQty(qty.toString());
+                              }}
+                              title="Tap untuk input cepat WIP"
+                              className={`text-xs font-mono font-bold px-2.5 py-1 rounded-lg cursor-pointer transition-all duration-200 flex items-center gap-1 shadow-sm ${
+                                qty > 0 
+                                  ? 'bg-amber-100 text-amber-900 font-black ring-2 ring-amber-200/50 hover:bg-amber-200 hover:scale-105 active:scale-95' 
+                                  : 'bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 hover:scale-105 active:scale-95'
+                              }`}
+                            >
+                              <span>{qty} pcs</span>
+                              <Edit3 className="h-2.5 w-2.5 opacity-60" />
                             </span>
 
                             {/* Mobile action button to transfer to next step */}
@@ -229,6 +288,170 @@ export default function LaporanWipView({
           })
         )}
       </div>
+
+      {/* QUICK WIP INPUT OVERLAY DIALOG */}
+      {editingWip && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-4 animate-fade-in">
+          {/* Backdrop closer */}
+          <div className="absolute inset-0" onClick={() => setEditingWip(null)}></div>
+          
+          {/* Modal Container */}
+          <div className="relative bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md border border-slate-100 overflow-hidden transform transition-all duration-300 animate-in slide-in-from-bottom">
+            {/* Modal Header */}
+            <div className="bg-slate-900 p-5 text-white flex justify-between items-start">
+              <div>
+                <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest block">
+                  {customers.find(c => c.id === editingWip.item.customer_id)?.nama || 'PELANGGAN'}
+                </span>
+                <h4 className="font-extrabold text-base leading-tight mt-0.5">{editingWip.item.model}</h4>
+                <p className="text-xs font-mono text-slate-300 mt-1">{editingWip.item.part_number}</p>
+              </div>
+              <button 
+                onClick={() => setEditingWip(null)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4">
+              {/* Process indicator */}
+              <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 uppercase">STASIUN KERJA</span>
+                <span className="text-xs font-black text-[#0058ab] bg-white border border-blue-200 px-3 py-1 rounded-full uppercase tracking-wider">
+                  ⚙️ {editingWip.proses}
+                </span>
+              </div>
+
+              {/* Input Area */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wide">
+                  MASUKKAN JUMLAH SISA WIP TERBARU (PCS)
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type="number"
+                    pattern="[0-9]*"
+                    inputMode="numeric"
+                    value={newWipQty}
+                    onChange={(e) => setNewWipQty(e.target.value)}
+                    className="w-full text-center text-3xl font-black text-slate-900 bg-slate-50 border-2 border-ikea-blue rounded-2xl py-3 px-4 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-100"
+                    placeholder="0"
+                    autoFocus
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <span className="absolute right-4 text-sm font-black text-slate-400 uppercase tracking-wider font-mono">pcs</span>
+                </div>
+              </div>
+
+              {/* QUICK PRESETS & CONTROL BUTTONS */}
+              <div className="space-y-2">
+                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tombol Pintas Pembantu</span>
+                
+                {/* Plus / Minus Presets */}
+                <div className="grid grid-cols-6 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustPreset(-100)}
+                    className="py-2 text-[11px] font-black bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg border border-rose-200 cursor-pointer active:scale-95 transition-all"
+                  >
+                    -100
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustPreset(-50)}
+                    className="py-2 text-[11px] font-black bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg border border-rose-200 cursor-pointer active:scale-95 transition-all"
+                  >
+                    -50
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustPreset(-10)}
+                    className="py-2 text-[11px] font-black bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg border border-rose-200 cursor-pointer active:scale-95 transition-all"
+                  >
+                    -10
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustPreset(10)}
+                    className="py-2 text-[11px] font-black bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg border border-emerald-200 cursor-pointer active:scale-95 transition-all"
+                  >
+                    +10
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustPreset(50)}
+                    className="py-2 text-[11px] font-black bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg border border-emerald-200 cursor-pointer active:scale-95 transition-all"
+                  >
+                    +50
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustPreset(100)}
+                    className="py-2 text-[11px] font-black bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg border border-emerald-200 cursor-pointer active:scale-95 transition-all"
+                  >
+                    +100
+                  </button>
+                </div>
+
+                {/* Direct Setters */}
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setNewWipQty('0')}
+                    className="py-2.5 text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl cursor-pointer active:scale-95 transition-all"
+                  >
+                    Set Selesai (0 pcs)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewWipQty(editingWip.currentQty.toString())}
+                    className="py-2.5 text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl cursor-pointer active:scale-95 transition-all"
+                  >
+                    Reset Semula ({editingWip.currentQty} pcs)
+                  </button>
+                </div>
+              </div>
+
+              {/* Explanatory system note */}
+              <p className="text-[10px] text-slate-400 leading-relaxed text-center italic">
+                {parseInt(newWipQty) - editingWip.currentQty === 0 ? (
+                  <span>Tidak ada perubahan nilai WIP.</span>
+                ) : (
+                  <span>
+                    Sistem akan mencatat transaksi penyesuaian{' '}
+                    <strong className="text-slate-600 font-bold">
+                      {(parseInt(newWipQty) || 0) - editingWip.currentQty > 0 ? 'MASUK' : 'KELUAR'}{' '}
+                      {Math.abs((parseInt(newWipQty) || 0) - editingWip.currentQty)} pcs
+                    </strong>{' '}
+                    untuk menyesuaikan sisa WIP.
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-50 p-4 border-t border-slate-100 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingWip(null)}
+                className="w-1/3 py-3 text-xs font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-all cursor-pointer text-center"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveQuickWip}
+                className="w-2/3 py-3 text-xs font-black text-white bg-[#0058ab] hover:bg-[#004280] rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-blue-200"
+              >
+                <Save className="h-4 w-4" />
+                <span>Simpan Penyesuaian</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -300,6 +300,7 @@ export default function App() {
           <LaporanWipView 
             appData={appData}
             onNavigateToCatat={handleQuickWIPTransfer}
+            onAddTransactions={handleAddTransactions}
             onCopyWA={handleCopyWA}
           />
         )}
